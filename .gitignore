@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.turbo/
+*.log
+.env
+.env.*
+!.env.example
+
+# Generated Prisma client
+apps/api/src/generated/
+
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
