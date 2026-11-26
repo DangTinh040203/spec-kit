@@ -12,6 +12,8 @@
 
 ### Session 2026-11-26
 
+- Q: How is a due date cleared on update? → A: Only by sending `null`. An empty string is not a
+  valid date and is rejected. A description is cleared by `null` or an empty string.
 - Q: Should this spec match the kanban board spec (002) now, with three statuses and a saved
   position, instead of the two-state completed / not completed status? → A: Yes. 001 is not
   built yet, so it is specified in its final form: three statuses ("to do", "in progress",
@@ -134,7 +136,7 @@ empty.
 
 1. **Given** a todo, **When** the client sends only a new title, **Then** only the title changes
    and the update timestamp moves forward; the creation timestamp does not change.
-2. **Given** a todo with a description and a due date, **When** the client sets them to empty,
+2. **Given** a todo with a description and a due date, **When** the client sets both to null,
    **Then** the todo has no description and no due date.
 3. **Given** a todo, **When** the client sends an invalid title or an invalid due date, **Then**
    nothing changes and a validation error names the field.
@@ -198,7 +200,8 @@ and confirm both its status and position changed and the other todos kept their 
 - A title of exactly 1 or exactly 200 characters is accepted; 201 characters is rejected. Length
   is counted in characters as a person reads them, so accented and non-Latin text (for example,
   Vietnamese) counts correctly.
-- A description longer than 2,000 characters is rejected.
+- A description longer than 2,000 characters is rejected. Like the title, its length is counted
+  in characters as a person reads them.
 - A due date that is not a valid calendar date (for example, February 30) is rejected. A due date
   in the past is accepted, since a person may log an overdue task.
 - An identifier that is malformed (not in the format the system issues) gets the same
@@ -225,7 +228,8 @@ and confirm both its status and position changed and the other todos kept their 
 - **FR-001**: Each todo MUST have a unique identifier assigned by the system when it is created.
 - **FR-002**: Each todo MUST have a title of 1–200 characters after trimming leading and trailing
   spaces.
-- **FR-003**: Each todo MAY have a description of up to 2,000 characters.
+- **FR-003**: Each todo MAY have a description of up to 2,000 characters, counted as a person
+  reads them (the same way as the title).
 - **FR-004**: Each todo MAY have a due date, which is a calendar date without a time of day.
 - **FR-005**: Each todo MUST have exactly one of three statuses: "to do", "in progress", or
   "done". New todos MUST start as "to do" unless the client gives a status when creating them.
@@ -241,8 +245,9 @@ and confirm both its status and position changed and the other todos kept their 
   and returned in full.
 - **FR-009**: The client MUST be able to fetch a single todo by its identifier.
 - **FR-010**: The client MUST be able to update any combination of title, description, and due
-  date in one request, changing only the fields it sends. Sending an empty value for the
-  description or due date MUST clear it. The updated todo MUST be returned in full.
+  date in one request, changing only the fields it sends. Sending `null` for the
+  description or the due date MUST clear it; an empty description also clears it, while an empty
+  string for the due date MUST be rejected as an invalid date. The updated todo MUST be returned in full.
 - **FR-011**: The client MUST be able to set a todo's status to any of the three values. A todo
   that changes status MUST be placed at the top of its new status. Setting a status the todo
   already has MUST succeed without error and MUST NOT change its position. The updated todo MUST
@@ -336,5 +341,7 @@ and confirm both its status and position changed and the other todos kept their 
 - Data is stored persistently, so todos remain available across restarts.
 - The status model and positions are designed for the kanban board in feature 002; no data
   conversion is needed because no todos exist before this feature ships.
-- Concurrent moves from several clients at once are not expected (single user); the last
-  successful move wins.
+- There is one user, but their requests can overlap (for example, a second card move sent
+  before the first one is saved, as in feature 002). Overlapping requests MUST still leave
+  positions without gaps or duplicates (FR-027); they are applied one after another, and the last
+  one to finish decides the final order.

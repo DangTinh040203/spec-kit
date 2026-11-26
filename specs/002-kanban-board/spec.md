@@ -8,11 +8,21 @@
 
 **Input**: User description: "Build a kanban board for the todo app so a person can see and organize their todos visually. This is the first user-facing screen of the app; it uses the existing todo backend (feature 001) and extends it where needed. The board has three columns: \"To do\", \"In progress\", and \"Done\". Every todo appears in exactly one column, based on its status. This replaces the current two-state status (completed / not completed) with three states; existing \"not completed\" todos go to \"To do\" and \"completed\" todos go to \"Done\". The person can: see all todos as cards in their column, showing title, due date (if any), and a visual hint when the due date has passed; drag a card to another column to change its status; drag a card up or down within a column to change its order; the order is saved and stays the same after reloading the page; create a new todo directly in a column; open a card to view and edit its title, description, and due date, or delete it. When a drag fails to save (for example, the server is unreachable), the card returns to its original place and the person sees a clear message. The board should be usable on desktop with a mouse; touch/mobile drag is not required in this version. Keyboard users must be able to move cards between columns without dragging. Single user, no authentication. Out of scope: custom columns, swimlanes, WIP limits, multiple boards, real-time sync between browser tabs."
 
+## Clarifications
+
+### Session 2026-11-26
+
+- Q: Feature 001 now defines three statuses, positions, and a move operation. Does this feature
+  still change the backend's status model or convert data? → A: No. The status model, status
+  filter, positions, and move operation come from feature 001; the earlier requirements for a
+  status conversion (FR-003) and its success criterion (SC-007) are replaced by relying on 001.
+
 ## User Scenarios & Testing _(mandatory)_
 
 The user is a single person managing their own todos in a desktop web browser. This feature
-builds on the todo backend from feature 001 (`specs/001-todo-backend-api/spec.md`) and changes
-its status model from two states to three.
+builds on the todo backend from feature 001 (`specs/001-todo-backend-api/spec.md`), which already
+provides the three statuses, a saved position within each status, and a move operation (see the
+001 clarification of 2026-11-26).
 
 ### User Story 1 - See all todos on a board (Priority: P1)
 
@@ -46,9 +56,9 @@ and overdue marking.
 6. **Given** the todos cannot be loaded (for example, the server is unreachable), **When** the
    person opens the board, **Then** a clear message explains that the board could not be loaded
    and offers a way to try again.
-7. **Given** todos existed before this feature with status "not completed" or "completed",
-   **When** the person opens the board for the first time, **Then** "not completed" todos appear
-   in "To do" and "completed" todos appear in "Done", with no todo lost.
+7. **Given** todos exist in each status with saved positions, **When** the person opens the
+   board, **Then** every todo appears in its status's column in its saved order, with no todo
+   missing.
 
 ---
 
@@ -191,21 +201,19 @@ and confirm it is gone.
 
 ### Functional Requirements
 
-**Status model (changes feature 001)**
+**Status model (provided by feature 001)**
 
-- **FR-001**: Each todo MUST have exactly one of three statuses: "to do", "in progress", or
-  "done". This replaces the two-state status (completed / not completed) defined in feature 001
-  (FR-005, FR-011, FR-013 there).
+- **FR-001**: Each todo has exactly one of three statuses: "to do", "in progress", or "done", as
+  defined in feature 001 (FR-005 there). Each column shows the todos of one status.
 - **FR-002**: New todos MUST start as "to do" unless they are created in a specific column, in
   which case they MUST take that column's status.
-- **FR-003**: Existing todos MUST be converted without loss: "not completed" becomes "to do" and
-  "completed" becomes "done". Within each column, converted todos MUST be ordered by creation
-  date, newest first.
+- **FR-003**: The board MUST read and change todos only through feature 001's operations
+  (create with a status, change status, move, update, delete, and list sorted by position). This
+  feature adds no new backend data or data conversion.
 - **FR-004**: The client MUST be able to set a todo's status to any of the three values, and
   setting the status a todo already has MUST succeed without error.
-- **FR-005**: Filtering the todo list by status MUST support "all", each of the three statuses,
-  and "active" (meaning "to do" and "in progress" together, replacing the old "not completed"
-  filter).
+- **FR-005**: The board MUST load each column using feature 001's status filter and position
+  sort (FR-013, FR-014 there).
 
 **Ordering**
 
@@ -278,9 +286,8 @@ and confirm it is gone.
 ### Key Entities
 
 - **Todo**: One task the person wants to do. Attributes from feature 001 (identifier, title,
-  optional description, optional due date, creation and update timestamps), with these changes:
-  status is now one of "to do", "in progress", or "done"; and it has a position that sets its
-  order within its column.
+  optional description, optional due date, status ("to do", "in progress", or "done"), position
+  within its status, creation and update timestamps). This feature does not change it.
 - **Board column**: A fixed view grouping all todos with one status. There are exactly three
   columns ("To do", "In progress", "Done"); they are not stored or editable.
 
@@ -300,14 +307,13 @@ and confirm it is gone.
   presses after the card has focus.
 - **SC-006**: A first-time user can create a todo in a chosen column and move it to another
   column within 30 seconds, without instructions.
-- **SC-007**: After the status change, 100% of existing todos appear on the board in the column
-  matching their former status (not completed → "To do", completed → "Done").
+- **SC-007**: 100% of todos appear on the board in the column matching their status and in the
+  same order as feature 001's list sorted by position.
 
 ## Assumptions
 
-- Feature 001 is specified but not yet built; this feature changes its specification (status
-  model, status filter, and new position field) rather than migrating a running system. Any todos
-  that already exist when this feature ships are converted as described in FR-003.
+- Feature 001 provides the status model, positions, and move operation this board needs, so no
+  backend change or data conversion is part of this feature.
 - Ordering is manual only on the board; the list sorting options from feature 001 (by creation
   date or due date) remain available to API clients but do not affect the board's order.
 - New todos go to the top of their column so they are immediately visible; keyboard moves to

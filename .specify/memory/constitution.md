@@ -1,24 +1,3 @@
-<!--
-Sync Impact Report
-- Version change: 2.1.0 → 2.2.0 (MINOR: guidance materially expanded; no principle removed
-  or redefined)
-- Modified principles:
-  - I. Clean Architecture on NestJS: infrastructure may use Redis as a cache; Redis client
-    types confined to infrastructure like Prisma types; caching added only as a repository
-    decorator; Prisma schema located at apps/api/prisma/schema.prisma
-  - III. File Naming Convention: added .error.ts (domain), .filter.ts and .validator.ts
-    (presentation); .service.ts widened to infrastructure client wrappers (prisma.service.ts,
-    redis.service.ts); added cached- prefix for caching repository decorators; main.ts
-    exempt as the NestJS entry point
-- Modified sections: Code Organization Standards (backend lives in apps/api of a Turborepo
-  monorepo)
-- Added sections: none
-- Removed sections: none
-- Templates: not modified (dependent templates read this file at runtime)
-- Follow-up TODOs: frontend naming conventions to be added when frontend work starts
-  (feature 002, apps/web)
--->
-
 # Todo App Constitution
 
 ## Core Principles

@@ -94,7 +94,15 @@ Technical Context is left as NEEDS CLARIFICATION.
   rebalancing); linked list (slow ordered reads, hard to page).
 - **Constraint note**: No unique index on `(status, position)`, because shifting rows would
   briefly create duplicates and Prisma cannot declare deferrable constraints. A plain index keeps
-  reads fast. Concurrent writers are out of scope (single user, last move wins).
+  reads fast.
+- **Concurrency**: Even with one user, requests overlap (the board in 002 lets a person drop a
+  card while the previous move is still saving). Under READ COMMITTED, two overlapping creates
+  or moves could both shift rows without seeing each other's insert and leave two todos at the
+  same position, breaking FR-027. Every transaction that changes positions (create, move,
+  status change, delete) therefore starts with `SELECT pg_advisory_xact_lock(<constant>)`,
+  which serialises them; the lock is released at commit. Reads take no lock.
+  Alternatives: SERIALIZABLE isolation with retries (more code, retry loops); a unique index
+  (see the constraint note).
 
 ## R8. Validation and error format
 
@@ -190,6 +198,14 @@ because the user chose it, in the role where it fits this API best and cannot ch
   - If Redis is down or slow (short command timeout), the decorator logs a warning and calls the
     Prisma repository directly. The API keeps working and returns correct data (FR-022 still
     applies only to real failures).
+  - **Stale-read guard**: a write can succeed in PostgreSQL while `INCR todos:version` fails
+    (Redis flapping or timing out), leaving old `v{n}` keys readable for up to 60 s. The
+    constitution says a cache failure MUST NOT change a result, so the decorator keeps an
+    in-process flag `cacheUntrusted`: it is set when a bump fails, and while it is set every read
+    skips the cache and first retries the `INCR`; the flag clears only when an `INCR` succeeds.
+    It also starts set at boot and clears on the first successful `INCR`, so a restart after a
+    missed bump never serves old keys. This assumes a single API instance; several instances
+    would need a shared signal (out of scope).
   - `todo.module.ts` binds `TodoRepository` to `CachedTodoRepository`, which receives
     `PrismaTodoRepository` and `RedisService`. Use cases do not know the cache exists.
 - **Rationale**: Clean Architecture keeps caching an infrastructure detail (Open/Closed: no use

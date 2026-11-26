@@ -9,17 +9,17 @@ The only entity in this feature. It has no relationships.
 | Field | Domain type | Storage (PostgreSQL via Prisma) | Rules | Spec |
 | --- | --- | --- | --- | --- |
 | `id` | `string` (UUID v4) | `uuid`, primary key, generated | Set by the system, never changed | FR-001, FR-007 |
-| `title` | `string` | `varchar(800)` | Trimmed; 1–200 grapheme clusters after trimming | FR-002 |
-| `description` | `string \| null` | `text`, nullable | Up to 2,000 characters; empty string or `null` clears it | FR-003, FR-010 |
-| `dueDate` | `string \| null` (`YYYY-MM-DD`) | `date`, nullable | Valid calendar date; past dates allowed; no time of day | FR-004 |
+| `title` | `string` | `text` | Trimmed; 1–200 grapheme clusters after trimming | FR-002 |
+| `description` | `string \| null` | `text`, nullable | Up to 2,000 grapheme clusters; empty string or `null` clears it | FR-003, FR-010 |
+| `dueDate` | `string \| null` (`YYYY-MM-DD`) | `date`, nullable | Valid calendar date; past dates allowed; no time of day; only `null` clears it | FR-004 |
 | `status` | `TodoStatus` | enum `TodoStatus` | `todo` \| `in_progress` \| `done`; default `todo` | FR-005 |
 | `position` | `number` (integer ≥ 0) | `integer` | 0 = top of its status; dense 0..n-1 per status | FR-024, FR-027 |
 | `createdAt` | `Date` | `timestamptz`, `@default(now())` | Set once, never changed | FR-006 |
 | `updatedAt` | `Date` | `timestamptz`, `@updatedAt` | Changes on every successful write | FR-006 |
 
-`varchar(800)` leaves room for 200 grapheme clusters, which can take several code points each
-(for example, combining accents or emoji). The 200 limit itself is enforced in the application,
-not by the column.
+`title` is `text`, not `varchar(n)`: one grapheme cluster can take many code points (a family
+emoji takes 7), so any fixed column length could reject a valid 200-character title with a
+database error. The 200 limit is enforced in the application.
 
 ### Status values
 
@@ -39,7 +39,9 @@ Column order for `sort=position`: `todo`, `in_progress`, `done`.
 | `(createdAt)` | Default sort, tie-breaker (FR-016) |
 | `(dueDate)` | Due-date sort |
 
-No unique index on `(status, position)`; see [research.md R7](./research.md).
+No unique index on `(status, position)`. Every transaction that changes positions starts with
+`pg_advisory_xact_lock(<constant>)` so overlapping requests cannot create duplicate positions;
+see [research.md R7](./research.md).
 
 ## State transitions
 
@@ -132,11 +134,17 @@ Redis holds copies only; PostgreSQL is the source of truth. Losing Redis loses n
 | `todos:v{n}:{status}:{sort}:{order}:{page}:{pageSize}` | one page as JSON | 60 s | `findPage` on cache miss |
 
 Dates are stored as ISO strings in the JSON and turned back into domain types when read.
-Not-found results are not cached.
+Not-found results are not cached. If a version bump fails, the decorator stops reading and
+writing the cache until an `INCR` succeeds again (it also starts that way at boot); see
+[research.md R12](./research.md).
 
 ## Errors (domain)
 
-| Error | When | HTTP mapping (presentation) |
-| --- | --- | --- |
-| `TodoNotFoundError` | Id unknown or malformed | 404 `NOT_FOUND` |
-| `TodoValidationError` | An entity invariant fails (with field + reason list) | 400 `VALIDATION_ERROR` |
+Base classes live in `shared/domain/` so the shared exception filter never imports a feature:
+
+| Error | Extends | When | HTTP mapping (presentation) |
+| --- | --- | --- | --- |
+| `NotFoundError` (shared) | — | Base for "not found" | 404 `NOT_FOUND` |
+| `ValidationError` (shared) | — | Base for invariant failures, with field + reason list | 400 `VALIDATION_ERROR` |
+| `TodoNotFoundError` | `NotFoundError` | Id unknown or malformed | 404 `NOT_FOUND` |
+| `TodoValidationError` | `ValidationError` | A todo invariant fails | 400 `VALIDATION_ERROR` |

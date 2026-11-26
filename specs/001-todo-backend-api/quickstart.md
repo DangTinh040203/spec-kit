@@ -72,6 +72,7 @@ Create 3 `todo`, 2 `in_progress`, 3 `done` todos, some without due dates.
 | 1   | `PATCH /todos/$ID` `{"dueDate":"2027-01-15"}`            | only `dueDate` and `updatedAt` change |
 | 2   | `PATCH /todos/$ID` `{"description":null,"dueDate":null}` | both cleared                          |
 | 3   | `PATCH /todos/$ID` `{}`                                  | 400; at least one field required      |
+| 4   | `PATCH /todos/$ID` `{"dueDate":""}`                      | 400 `VALIDATION_ERROR` on `dueDate`   |
 
 ### US5: Delete (P3)
 
@@ -91,6 +92,26 @@ Create A, B, C in `todo` (positions: C 0, B 1, A 2).
 | 3   | `{"status":"done","position":999}`                     | placed at the bottom of `done`                   |
 | 4   | `{"status":"done","position":-1}`                      | 400 on `position`                                |
 
+### Concurrent moves (FR-027)
+
+With at least 5 todos in `todo`, send 10 moves at once (for example `for i in $(seq 10); do curl … /move -d '{"status":"todo","position":0}' & done; wait`, each for a different todo id), and 10 creates at once the same way. Then `GET /todos?status=todo&sort=position&pageSize=100`: positions are exactly 0, 1, 2, … with no gaps or duplicates.
+
+### Seed data (for SC-003)
+
+Insert 10,000 todos directly in PostgreSQL, no extra package needed:
+
+```bash
+docker compose exec postgres psql -U todo -d todo -c "
+  INSERT INTO \"Todo\" (id, title, status, position, \"dueDate\", \"createdAt\", \"updatedAt\")
+  SELECT gen_random_uuid(), 'Seed ' || g, 'todo', g - 1,
+         CASE WHEN g % 3 = 0 THEN NULL ELSE CURRENT_DATE + (g % 90) END, now(), now()
+  FROM generate_series(1, 10000) AS g;"
+```
+
+Table and column names follow the Prisma model; adjust them if the generated migration names
+differ. Run `docker compose exec redis redis-cli INCR todos:version` afterwards so cached pages
+from before the seed are not used.
+
 ### Cross-cutting
 
 | Check                                                     | Expected                                                | Spec       |
@@ -108,6 +129,7 @@ Create A, B, C in `todo` (positions: C 0, B 1, A 2).
 | Create or move a todo, then `GET /todos?sort=position`                             | New data at once (not stale); `GET todos:version` is one higher                 |
 | `docker compose stop redis`, then repeat US1–US6                                   | All scenarios still pass; the API log shows cache warnings, no error responses  |
 | `docker compose start redis`                                                       | Caching resumes without restarting the API                                      |
+| Make `INCR` fail while `GET` works (for example `redis-cli CONFIG SET maxmemory 1` with `maxmemory-policy noeviction`, or rename the command), move a todo, then list | The list shows the move at once (cache skipped while untrusted); after restoring Redis, caching resumes once an `INCR` succeeds |
 
 ### CORS (for feature 002)
 

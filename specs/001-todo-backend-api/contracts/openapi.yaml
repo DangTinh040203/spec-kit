@@ -194,7 +194,9 @@ components:
       type: object
       additionalProperties: false
       minProperties: 1
-      description: Only the fields sent are changed. null (or "" for description) clears a field.
+      description: >-
+        Only the fields sent are changed. null clears description or dueDate;
+        "" also clears description, but "" for dueDate is a VALIDATION_ERROR.
       properties:
         title: { type: string }
         description: { type: [string, 'null'], maxLength: 2000 }

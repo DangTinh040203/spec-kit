@@ -88,6 +88,10 @@ file layout below add no roles, packages, or layer crossings beyond those listed
 
 Position shifting lives in `PrismaTodoRepository` because it is bulk SQL that must run in one
 transaction; the rules are stated on the domain contract, and use cases decide when each applies.
+Every position-changing transaction takes one PostgreSQL advisory lock first, so overlapping
+requests (for example, quick successive drags on the board) cannot break FR-027
+([research.md R7](./research.md)). The cache decorator stops using Redis whenever a version bump
+fails, so a Redis fault can never serve stale data ([research.md R12](./research.md)).
 
 ## Impact Analysis
 
@@ -137,6 +141,9 @@ apps/
 │       ├── app.module.ts                    # imports SharedModule, TodoModule
 │       ├── shared/
 │       │   ├── shared.module.ts             # provides + exports PrismaService, RedisService
+│       │   ├── domain/
+│       │   │   ├── not-found.error.ts       # base error; feature errors extend it
+│       │   │   └── validation.error.ts      # base error with field + reason details
 │       │   ├── infrastructure/
 │       │   │   ├── prisma.service.ts
 │       │   │   └── redis.service.ts         # connect, get/set with timeout, incr; never throws to callers
