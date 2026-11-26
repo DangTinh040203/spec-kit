@@ -1,18 +1,22 @@
 <!--
 Sync Impact Report
-- Version change: 2.0.0 → 2.1.0 (MINOR: guidance materially expanded; no principle removed
+- Version change: 2.1.0 → 2.2.0 (MINOR: guidance materially expanded; no principle removed
   or redefined)
 - Modified principles:
-  - I. Clean Architecture on NestJS: ORM fixed to Prisma (schema in prisma/schema.prisma);
-    Prisma-generated types confined to infrastructure; repository contracts are abstract
-    classes used directly as injection tokens (no Symbol/string tokens); use cases provided
-    via factory providers
-  - III. File Naming Convention: scoped to backend source files; added .mapper.ts and
-    .service.ts (prisma.service.ts only); <orm>- prefix replaced with prisma-
+  - I. Clean Architecture on NestJS: infrastructure may use Redis as a cache; Redis client
+    types confined to infrastructure like Prisma types; caching added only as a repository
+    decorator; Prisma schema located at apps/api/prisma/schema.prisma
+  - III. File Naming Convention: added .error.ts (domain), .filter.ts and .validator.ts
+    (presentation); .service.ts widened to infrastructure client wrappers (prisma.service.ts,
+    redis.service.ts); added cached- prefix for caching repository decorators; main.ts
+    exempt as the NestJS entry point
+- Modified sections: Code Organization Standards (backend lives in apps/api of a Turborepo
+  monorepo)
 - Added sections: none
 - Removed sections: none
 - Templates: not modified (dependent templates read this file at runtime)
 - Follow-up TODOs: frontend naming conventions to be added when frontend work starts
+  (feature 002, apps/web)
 -->
 
 # Todo App Constitution
@@ -25,16 +29,22 @@ Sync Impact Report
   - **domain**: entities and repository contracts. No framework or ORM imports.
   - **application**: use cases that hold the business logic, depending only on domain.
   - **infrastructure**: Prisma-based implementations of the domain repository contracts, plus
-    the mappers and Prisma client service they use.
+    the mappers and client services they use (Prisma, and Redis when caching is used).
   - **presentation**: NestJS controllers and DTOs that receive input and call use cases.
 - Dependencies MUST point inward only: presentation and infrastructure → application → domain.
   An inner layer MUST NOT import from an outer layer.
 - The domain and application layers MUST NOT import NestJS (`@nestjs/*`) or any ORM/database
   code, including decorators such as `@Injectable()` or `@Inject()`.
-- The ORM is Prisma. Database models MUST be defined in `prisma/schema.prisma`.
+- The ORM is Prisma. Database models MUST be defined in the backend app's
+  `prisma/schema.prisma` (`apps/api/prisma/schema.prisma`).
 - Prisma-generated types (anything from `@prisma/client` or the generated client) MUST NOT leave
   the infrastructure layer. Repository implementations MUST convert Prisma models to domain
   entities (and back) through mappers, and MUST accept and return domain types only.
+- Redis MAY be used only as a cache; PostgreSQL (through Prisma) remains the source of truth.
+  Redis client types MUST NOT leave the infrastructure layer. Caching MUST be added as a
+  repository decorator that implements the same domain contract and wraps the Prisma
+  implementation, so use cases do not know a cache exists. A cache failure MUST fall back to
+  the wrapped repository and MUST NOT change an operation's result.
 - Domain repository contracts MUST be abstract classes, not TypeScript interfaces. The abstract
   class itself is the NestJS injection token; `Symbol` or string tokens MUST NOT be used.
 - Each feature's `.module.ts` is its composition root and the only file allowed to import from
@@ -73,21 +83,30 @@ keeps the ORM replaceable.
   and `<role>` identifies the file's responsibility.
 - Role suffixes by layer:
 
-  | Layer          | Suffix                               | Example                     |
-  | -------------- | ------------------------------------ | --------------------------- |
-  | domain         | `.entity.ts`                         | `todo.entity.ts`            |
-  | domain         | `.repository.ts` (abstract class)    | `todo.repository.ts`        |
-  | application    | `.use-case.ts`                       | `create-todo.use-case.ts`   |
-  | infrastructure | `.repository.ts` (implementation)    | `prisma-todo.repository.ts` |
-  | infrastructure | `.mapper.ts` (Prisma model ↔ entity) | `todo.mapper.ts`            |
-  | infrastructure | `.service.ts` (Prisma client only)   | `prisma.service.ts`         |
-  | presentation   | `.controller.ts`                     | `todo.controller.ts`        |
-  | presentation   | `.dto.ts`                            | `create-todo.dto.ts`        |
-  | feature root   | `.module.ts`                         | `todo.module.ts`            |
+  | Layer          | Suffix                               | Example                        |
+  | -------------- | ------------------------------------ | ------------------------------ |
+  | domain         | `.entity.ts`                         | `todo.entity.ts`               |
+  | domain         | `.repository.ts` (abstract class)    | `todo.repository.ts`           |
+  | domain         | `.error.ts` (domain error class)     | `todo-not-found.error.ts`      |
+  | application    | `.use-case.ts`                       | `create-todo.use-case.ts`      |
+  | infrastructure | `.repository.ts` (implementation)    | `prisma-todo.repository.ts`    |
+  | infrastructure | `.repository.ts` (cache decorator)   | `cached-todo.repository.ts`    |
+  | infrastructure | `.mapper.ts` (Prisma model ↔ entity) | `todo.mapper.ts`               |
+  | infrastructure | `.service.ts` (client wrapper only)  | `prisma.service.ts`            |
+  | presentation   | `.controller.ts`                     | `todo.controller.ts`           |
+  | presentation   | `.dto.ts`                            | `create-todo.dto.ts`           |
+  | presentation   | `.filter.ts` (exception filter)      | `http-exception.filter.ts`     |
+  | presentation   | `.validator.ts` (custom validator)   | `grapheme-length.validator.ts` |
+  | feature root   | `.module.ts`                         | `todo.module.ts`               |
 
 - A repository implementation MUST be named with the `prisma-` prefix
-  (e.g., `prisma-todo.repository.ts`) to distinguish it from the domain contract.
-- `.service.ts` is reserved for `prisma.service.ts`; no other file MAY use this suffix.
+  (e.g., `prisma-todo.repository.ts`) to distinguish it from the domain contract. A repository
+  decorator that adds caching MUST be named with the `cached-` prefix
+  (e.g., `cached-todo.repository.ts`).
+- `.service.ts` is reserved for infrastructure client wrappers: `prisma.service.ts` and
+  `redis.service.ts`. No other file MAY use this suffix; business logic MUST NOT live in a
+  `.service.ts` file.
+- `main.ts`, the NestJS entry point, is exempt from the role-suffix rule.
 - Files of the same role MUST use the same suffix throughout the project; a new role suffix MUST
   be added to this table before first use.
 
@@ -107,12 +126,14 @@ control over what enters the project.
 
 ## Code Organization Standards
 
+- The repository is a Turborepo monorepo. The backend lives in `apps/api`; the frontend will
+  live in `apps/web`. Shared packages go in `packages/` only when more than one app uses them.
 - Backend code is grouped by feature module; each module contains `domain/`, `application/`,
   `infrastructure/`, and `presentation/` folders plus its `.module.ts`, following Principles I
   and III.
 - Shared logic MUST live in a dedicated shared module that follows the same layer rules, rather
-  than be duplicated across features. `prisma.service.ts` lives in the shared module's
-  `infrastructure/` folder.
+  than be duplicated across features. `prisma.service.ts` and `redis.service.ts` live in the
+  shared module's `infrastructure/` folder.
 
 ## Development Workflow
 
@@ -122,7 +143,7 @@ control over what enters the project.
 3. If the plan needs a new dependency, stop and ask the user before installing (Principle IV).
 4. Implement with files named per Principle III.
 5. Review checks compliance with all four principles, including the inward-only dependency rule
-   and that no Prisma type leaves infrastructure, before the change is merged.
+   and that no Prisma or Redis type leaves infrastructure, before the change is merged.
 
 Automated tests are not required at this stage; plans and tasks MUST NOT add testing work unless
 the user requests it.
@@ -136,4 +157,4 @@ the user requests it.
 - Every plan and review MUST verify compliance with the Core Principles; any justified exception
   MUST be recorded in the plan.
 
-**Version**: 2.1.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-22
+**Version**: 2.2.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-26
