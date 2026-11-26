@@ -1,0 +1,38 @@
+// Feature 001-todo-backend-api. See specs/001-todo-backend-api/data-model.md.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Declaration order matters: PostgreSQL sorts enums by it, and sort=position relies on
+// todo < in_progress < done.
+enum TodoStatus {
+  todo
+  in_progress
+  done
+}
+
+model Todo {
+  id          String     @id @default(uuid()) @db.Uuid
+  // text, not varchar(n): one grapheme can take many code points; the 1-200 limit is
+  // enforced by the application.
+  title       String
+  description String?
+  dueDate     DateTime?  @db.Date
+  status      TodoStatus @default(todo)
+  // 0 = top of its status; dense 0..n-1. No unique index (see research.md R7).
+  position    Int
+  createdAt   DateTime   @default(now()) @db.Timestamptz
+  updatedAt   DateTime   @updatedAt @db.Timestamptz
+
+  @@index([status, position])
+  @@index([createdAt])
+  @@index([dueDate])
+}

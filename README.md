@@ -3,17 +3,35 @@
 A todo application built with [Spec Kit](https://github.com/github/spec-kit) (spec-driven
 development) and Claude Code. The backend uses NestJS + Prisma and follows Clean Architecture.
 
-> **Status:** project setup only. The constitution and the Spec Kit tooling are in place, and
-> no feature has been specified or implemented yet.
+> **Status:** feature 001 (todo backend API) is implemented in `apps/api`. Feature 002 (kanban
+> board, `apps/web`) is specified and not yet planned.
 
 ## Tech stack
 
-| Area         | Choice                                   |
-| ------------ | ---------------------------------------- |
-| Backend      | NestJS (TypeScript)                      |
-| ORM          | Prisma (`prisma/schema.prisma`)          |
-| Architecture | Clean Architecture, four layers          |
-| Workflow     | Spec Kit + Claude Code (`/speckit-*`)    |
+| Area         | Choice                                                                 |
+| ------------ | ---------------------------------------------------------------------- |
+| Monorepo     | Turborepo + pnpm workspaces (`apps/*`, `packages/*`)                   |
+| Backend      | NestJS 12 (TypeScript, ESM) in `apps/api`                              |
+| Database     | PostgreSQL 17 via Prisma 7 (`apps/api/prisma/schema.prisma`)           |
+| Cache        | Redis (read cache only; the API keeps working without it)              |
+| Frontend     | Next.js + Tailwind CSS + shadcn/ui + Motion in `apps/web` (feature 002) |
+| Architecture | Clean Architecture, four layers                                        |
+| Workflow     | Spec Kit + Claude Code (`/speckit-*`)                                  |
+
+## Run locally
+
+Requires Node.js 22+, pnpm, and Docker.
+
+```bash
+docker compose up -d                        # PostgreSQL 17 + Redis
+cp apps/api/.env.example apps/api/.env
+pnpm install
+pnpm --filter api db:migrate                # create tables
+pnpm turbo run dev --filter=api             # http://localhost:4000
+```
+
+API contract: [`specs/001-todo-backend-api/contracts/openapi.yaml`](specs/001-todo-backend-api/contracts/openapi.yaml).
+Manual checks: [`specs/001-todo-backend-api/quickstart.md`](specs/001-todo-backend-api/quickstart.md).
 
 ## Architecture
 
@@ -40,34 +58,30 @@ Key rules:
 - Each feature's `.module.ts` is the composition root: it binds repositories and provides use
   cases through factory providers.
 
-### Planned folder layout
+### Folder layout
 
 ```
-prisma/
-  schema.prisma
-src/
-  shared/
-    infrastructure/
-      prisma.service.ts
-  todo/
-    domain/
-      todo.entity.ts
-      todo.repository.ts          # abstract class
-    application/
-      create-todo.use-case.ts
-    infrastructure/
-      prisma-todo.repository.ts
-      todo.mapper.ts
-    presentation/
-      todo.controller.ts
-      create-todo.dto.ts
-    todo.module.ts
+apps/api/
+  prisma/schema.prisma
+  src/
+    main.ts
+    shared/
+      domain/            not-found.error.ts, validation.error.ts
+      infrastructure/    prisma.service.ts, redis.service.ts
+      presentation/      http-exception.filter.ts, grapheme-length.validator.ts
+    todo/
+      domain/            todo.entity.ts, todo.repository.ts (abstract), *.error.ts
+      application/       *.use-case.ts (create, get, list, update, change-status, move, delete)
+      infrastructure/    prisma-todo.repository.ts, cached-todo.repository.ts, todo.mapper.ts
+      presentation/      todo.controller.ts, *.dto.ts
+      todo.module.ts
 ```
 
 ### File naming
 
 Backend files are named `<kebab-name>.<role>.ts`. Allowed roles: `entity`, `repository`,
-`use-case`, `mapper`, `service` (only `prisma.service.ts`), `controller`, `dto`, `module`.
+`error`, `use-case`, `mapper`, `service` (only `prisma.service.ts` and `redis.service.ts`),
+`controller`, `dto`, `filter`, `validator`, `module`.
 See the constitution for the full table.
 
 ## Development workflow
@@ -87,7 +101,7 @@ The active feature is recorded in `.specify/feature.json`.
 ## Project rules
 
 The full rules are in [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
-(v2.1.0). In short:
+(v2.2.0). In short:
 
 1. **Clean Architecture on NestJS**: see [Architecture](#architecture).
 2. **Impact analysis before change**: list every affected function, module, and caller in the
@@ -110,6 +124,9 @@ Automated tests are not required at this stage.
 
 | Path                     | Purpose                                         |
 | ------------------------ | ----------------------------------------------- |
+| `apps/api/`              | NestJS backend (feature 001)                    |
+| `specs/`                 | Spec Kit specs, plans, and tasks per feature    |
+| `docker-compose.yml`     | Local PostgreSQL + Redis                        |
 | `.specify/memory/`       | Project constitution                            |
 | `.specify/templates/`    | Spec Kit templates for spec, plan, and tasks    |
 | `.specify/extensions/`   | Spec Kit git extension (branching, validation)  |
