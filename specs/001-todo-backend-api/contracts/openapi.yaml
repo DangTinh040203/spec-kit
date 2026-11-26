@@ -1,0 +1,251 @@
+openapi: 3.1.0
+info:
+  title: Todo Backend API
+  version: 1.0.0
+  description: |
+    Feature 001-todo-backend-api. Single user, no authentication.
+    Every error response uses the Error schema (FR-019).
+    Unknown request fields are rejected with VALIDATION_ERROR.
+    A malformed todo id returns NOT_FOUND, the same as an unknown id (FR-021).
+servers:
+  - url: http://localhost:4000
+    description: apps/api in local development (apps/web runs on 3000)
+paths:
+  /todos:
+    post:
+      operationId: createTodo
+      summary: Create a todo (placed at the top of its status)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTodoRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Todo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      operationId: listTodos
+      summary: List todos with filter, sort, and pagination
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, active, todo, in_progress, done]
+            default: all
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [createdAt, dueDate, position]
+            default: createdAt
+        - name: order
+          in: query
+          description: Ignored when sort=position.
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: One page of todos; a page beyond the last returns an empty items list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TodoPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /todos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TodoId'
+    get:
+      operationId: getTodo
+      summary: Get one todo
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Todo' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      operationId: updateTodo
+      summary: Update title, description, and/or due date (only the fields sent)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTodoRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Todo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      operationId: deleteTodo
+      summary: Delete a todo permanently
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /todos/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/TodoId'
+    put:
+      operationId: changeTodoStatus
+      summary: Set the status; a new status places the todo at its top, the same status changes nothing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeStatusRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Todo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /todos/{id}/move:
+    parameters:
+      - $ref: '#/components/parameters/TodoId'
+    post:
+      operationId: moveTodo
+      summary: Move to a status and position in one atomic step (used by the kanban board)
+      description: |
+        The todo is first taken out of its current place, then inserted at `position`
+        in `status`. A position beyond the end places it at the bottom.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MoveTodoRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Todo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+components:
+  parameters:
+    TodoId:
+      name: id
+      in: path
+      required: true
+      description: UUID. Any other format returns NOT_FOUND.
+      schema: { type: string }
+  schemas:
+    TodoStatus:
+      type: string
+      enum: [todo, in_progress, done]
+    Todo:
+      type: object
+      required: [id, title, description, dueDate, status, position, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, description: '1–200 characters as a person reads them' }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        dueDate: { type: [string, 'null'], format: date, example: '2026-12-31' }
+        status: { $ref: '#/components/schemas/TodoStatus' }
+        position: { type: integer, minimum: 0, description: '0 = top of its status' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TodoPage:
+      type: object
+      required: [items, total, page, pageSize, totalPages]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Todo' }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        totalPages: { type: integer, minimum: 0 }
+    CreateTodoRequest:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, description: 'Trimmed; 1–200 characters after trimming' }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        dueDate: { type: [string, 'null'], format: date }
+        status: { $ref: '#/components/schemas/TodoStatus' }
+    UpdateTodoRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Only the fields sent are changed. null (or "" for description) clears a field.
+      properties:
+        title: { type: string }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        dueDate: { type: [string, 'null'], format: date }
+    ChangeStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/TodoStatus' }
+    MoveTodoRequest:
+      type: object
+      additionalProperties: false
+      required: [status, position]
+      properties:
+        status: { $ref: '#/components/schemas/TodoStatus' }
+        position: { type: integer, minimum: 0 }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [VALIDATION_ERROR, MALFORMED_REQUEST, NOT_FOUND, INTERNAL_ERROR]
+            message: { type: string }
+            details:
+              type: array
+              description: Present for VALIDATION_ERROR; lists every failing field at once.
+              items:
+                type: object
+                required: [field, reason]
+                properties:
+                  field: { type: string, example: title }
+                  reason: { type: string, example: 'must be 1–200 characters after trimming' }
+  responses:
+    BadRequest:
+      description: VALIDATION_ERROR or MALFORMED_REQUEST (body could not be parsed)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: NOT_FOUND
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: INTERNAL_ERROR, generic message, no internal details
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

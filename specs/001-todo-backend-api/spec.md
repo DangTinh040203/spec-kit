@@ -8,6 +8,17 @@
 
 **Input**: User description: "Build the backend API for a personal todo app. No user interface in this phase; a frontend will consume this API later. A todo has a title (required, 1–200 characters), an optional description, an optional due date, a completed/not-completed status, and creation/update timestamps. The API client can: create a todo, list todos, get one todo, update a todo's fields, mark a todo completed or not completed, and delete a todo permanently. Listing supports filtering by status (all / active / completed), sorting by creation date or due date, and pagination. Invalid input and requests for non-existent todos return clear, consistent error responses. Single user, no authentication in this version."
 
+## Clarifications
+
+### Session 2026-11-26
+
+- Q: Should this spec match the kanban board spec (002) now, with three statuses and a saved
+  position, instead of the two-state completed / not completed status? → A: Yes. 001 is not
+  built yet, so it is specified in its final form: three statuses ("to do", "in progress",
+  "done"), a position within each status, an "active" filter meaning "to do" + "in progress",
+  and one operation that moves a todo (status and position together). Feature 002 no longer
+  needs to change the backend's status model or convert existing data.
+
 ## User Scenarios & Testing _(mandatory)_
 
 The "user" in this phase is an API client (later, the frontend) acting on behalf of a single
@@ -22,41 +33,45 @@ fetch that todo by its identifier and see all of its details, including its stat
 alone is a usable minimum: a person can record tasks and look them up.
 
 **Independent Test**: Create a todo, then fetch it by its identifier and confirm every field
-matches what was sent, the status is "not completed", and both timestamps are set.
+matches what was sent, the status is "to do", and both timestamps are set.
 
 **Acceptance Scenarios**:
 
 1. **Given** no todos exist, **When** the client creates a todo with the title "Buy milk",
    **Then** the todo is saved and returned with a unique identifier, the title "Buy milk", no
-   description, no due date, status "not completed", and creation and update timestamps.
+   description, no due date, status "to do", position at the top of "to do", and creation and
+   update timestamps.
 2. **Given** the client sends a title, a description, and a due date, **When** the todo is created,
    **Then** all three values are saved and returned exactly as sent.
-3. **Given** a todo exists, **When** the client fetches it by its identifier, **Then** the full
+3. **Given** the client sends the status "in progress" when creating a todo, **When** the todo is
+   created, **Then** it has status "in progress" and is placed at the top of "in progress".
+4. **Given** a todo exists, **When** the client fetches it by its identifier, **Then** the full
    todo is returned.
-4. **Given** the client sends an empty title, a title of only spaces, or a title over 200
+5. **Given** the client sends an empty title, a title of only spaces, or a title over 200
    characters, **When** it tries to create a todo, **Then** nothing is saved and a validation
    error names the title field and explains the rule.
-5. **Given** no todo has a given identifier, **When** the client fetches it, **Then** a
+6. **Given** no todo has a given identifier, **When** the client fetches it, **Then** a
    "not found" error is returned.
 
 ---
 
 ### User Story 2 - List, filter, sort, and page through todos (Priority: P2)
 
-The client gets a list of todos. It can show only active or only completed todos, order them by
-creation date or due date, and fetch them one page at a time.
+The client gets a list of todos. It can show only todos with a given status, or all active ones,
+order them by creation date, due date, or saved position, and fetch them one page at a time.
 
 **Why this priority**: Once a person has more than a handful of todos, they need to see them as a
 list and narrow it down. This depends on todos existing (Story 1) but on nothing else.
 
-**Independent Test**: Create a mix of completed and active todos with different due dates, then
+**Independent Test**: Create a mix of todos in each status with different due dates, then
 request lists with each filter, each sort option, and different pages, and confirm the contents
 and order of every response.
 
-**Acceptance Scenarios**:t
+**Acceptance Scenarios**:
 
-1. **Given** 5 active and 3 completed todos exist, **When** the client lists with status "all",
-   "active", or "completed", **Then** it receives 8, 5, or 3 todos respectively.
+1. **Given** 3 "to do", 2 "in progress", and 3 "done" todos exist, **When** the client lists with
+   status "all", "active", "to do", "in progress", or "done", **Then** it receives 8, 5, 3, 2, or
+   3 todos respectively.
 2. **Given** several todos exist, **When** the client lists without any options, **Then** it
    receives all statuses, newest-created first, on the first page with the default page size.
 3. **Given** todos with different due dates and some with no due date, **When** the client sorts
@@ -67,32 +82,38 @@ and order of every response.
    size, and the total number of pages (3).
 5. **Given** 10 todos exist, **When** the client requests a page beyond the last one, **Then** it
    receives an empty list with the correct total count, not an error.
-6. **Given** the client sends an unknown status, an unknown sort field, a page number below 1, or
+6. **Given** todos in several statuses, **When** the client sorts by position, **Then** todos are
+   grouped by status in the order "to do", "in progress", "done", and within each status they
+   appear in their saved position order, top first.
+7. **Given** the client sends an unknown status, an unknown sort field, a page number below 1, or
    a page size outside the allowed range, **When** it lists todos, **Then** a validation error
    names the invalid option.
 
 ---
 
-### User Story 3 - Mark a todo completed or not completed (Priority: P2)
+### User Story 3 - Change a todo's status (Priority: P2)
 
-The client marks a todo as completed when the person finishes it, and can mark it as not
-completed again.
+The client moves a todo between "to do", "in progress", and "done" as the person works on it.
 
 **Why this priority**: Tracking what is done is the core purpose of a todo app, but it builds on
 Story 1 and is most useful together with the status filter in Story 2.
 
-**Independent Test**: Create a todo, mark it completed, fetch it and confirm the status changed
-and the update timestamp moved forward; then mark it not completed and confirm again.
+**Independent Test**: Create a todo, set it to "in progress", fetch it and confirm the status
+changed and the update timestamp moved forward; then set it to "done" and back to "to do" and
+confirm again.
 
 **Acceptance Scenarios**:
 
-1. **Given** an active todo, **When** the client marks it completed, **Then** its status is
-   "completed" and its update timestamp is later than before.
-2. **Given** a completed todo, **When** the client marks it not completed, **Then** its status is
-   "not completed".
-3. **Given** a completed todo, **When** the client marks it completed again, **Then** the request
-   succeeds and the todo stays completed.
-4. **Given** no todo has a given identifier, **When** the client changes its status, **Then** a
+1. **Given** a "to do" todo, **When** the client sets its status to "in progress", **Then** its
+   status is "in progress", it is placed at the top of "in progress", and its update timestamp is
+   later than before.
+2. **Given** a "done" todo, **When** the client sets its status to "to do", **Then** its status is
+   "to do" and its title, description, and due date are unchanged.
+3. **Given** a "done" todo, **When** the client sets its status to "done" again, **Then** the
+   request succeeds and the todo keeps its status and position.
+4. **Given** the client sends a status that is not one of the three values, **When** it changes a
+   todo's status, **Then** nothing changes and a validation error names the status field.
+5. **Given** no todo has a given identifier, **When** the client changes its status, **Then** a
    "not found" error is returned.
 
 ---
@@ -142,6 +163,34 @@ and it no longer appears in any list.
 
 ---
 
+### User Story 6 - Move a todo to a position (Priority: P3)
+
+The client moves a todo to a given position within its own status, or to a given position in
+another status, in one request. This is what the kanban board (feature 002) uses for drag and
+drop.
+
+**Why this priority**: Manual ordering is needed by the board, but the API is fully usable
+without it through status changes and sorting.
+
+**Independent Test**: Create three "to do" todos A, B, C (shown top to bottom as C, B, A), move A
+to the top, list by position and confirm the order A, C, B; then move B to position 0 of "done"
+and confirm both its status and position changed and the other todos kept their relative order.
+
+**Acceptance Scenarios**:
+
+1. **Given** "to do" holds C, B, A from top to bottom, **When** the client moves A to position 0
+   of "to do", **Then** the order is A, C, B and no other status changes.
+2. **Given** a "to do" todo, **When** the client moves it to position 1 of "in progress", **Then**
+   its status and position are saved together and it appears second in "in progress".
+3. **Given** a target position larger than the number of todos in the target status, **When** the
+   client moves a todo there, **Then** the todo is placed at the bottom of that status.
+4. **Given** a negative position or an unknown status, **When** the client moves a todo, **Then**
+   nothing changes and a validation error names the invalid field.
+5. **Given** no todo has a given identifier, **When** the client moves it, **Then** a "not found"
+   error is returned.
+
+---
+
 ### Edge Cases
 
 - A title with leading or trailing spaces is trimmed before it is checked and saved; a title that
@@ -161,6 +210,11 @@ and it no longer appears in any list.
 - When two todos have the same sort value (for example, the same due date), they are ordered by
   creation date, newest first, so the order is stable across pages.
 - A list request when no todos exist returns an empty list with a total count of 0.
+- Moving a todo into an empty status makes it the only todo there, at position 0.
+- Deleting a todo, or moving it out of a status, leaves the other todos in that status in the same
+  relative order.
+- Positions are counted from 0 at the top of each status; the client sees each todo's position
+  as a whole number, and positions within a status have no gaps or duplicates when listed.
 
 ## Requirements _(mandatory)_
 
@@ -173,33 +227,37 @@ and it no longer appears in any list.
   spaces.
 - **FR-003**: Each todo MAY have a description of up to 2,000 characters.
 - **FR-004**: Each todo MAY have a due date, which is a calendar date without a time of day.
-- **FR-005**: Each todo MUST have a status of either "completed" or "not completed"; new todos
-  MUST start as "not completed".
+- **FR-005**: Each todo MUST have exactly one of three statuses: "to do", "in progress", or
+  "done". New todos MUST start as "to do" unless the client gives a status when creating them.
 - **FR-006**: Each todo MUST have a creation timestamp, set once by the system and never changed,
   and an update timestamp, set by the system on creation and on every successful change.
-- **FR-007**: The client MUST NOT be able to set the identifier, status (on create), or either
+- **FR-007**: The client MUST NOT be able to set the identifier, the position on create, or either
   timestamp directly.
 
 **Operations**
 
 - **FR-008**: The client MUST be able to create a todo by providing a title and, optionally, a
-  description and a due date. The created todo MUST be returned in full.
+  description, a due date, and a status. The created todo MUST be placed at the top of its status
+  and returned in full.
 - **FR-009**: The client MUST be able to fetch a single todo by its identifier.
 - **FR-010**: The client MUST be able to update any combination of title, description, and due
   date in one request, changing only the fields it sends. Sending an empty value for the
   description or due date MUST clear it. The updated todo MUST be returned in full.
-- **FR-011**: The client MUST be able to set a todo's status to "completed" or "not completed".
-  Setting a status the todo already has MUST succeed without error. The updated todo MUST be
-  returned in full.
+- **FR-011**: The client MUST be able to set a todo's status to any of the three values. A todo
+  that changes status MUST be placed at the top of its new status. Setting a status the todo
+  already has MUST succeed without error and MUST NOT change its position. The updated todo MUST
+  be returned in full.
 - **FR-012**: The client MUST be able to delete a todo permanently. A deleted todo MUST NOT be
   recoverable or appear in any later response.
 
 **Listing**
 
 - **FR-013**: The client MUST be able to list todos filtered by status: "all" (default),
-  "active" (not completed), or "completed".
+  "active" ("to do" and "in progress" together), "to do", "in progress", or "done".
 - **FR-014**: The client MUST be able to sort the list by creation date or due date, in ascending
-  or descending order. The default MUST be creation date, newest first.
+  or descending order, or by position. The default MUST be creation date, newest first. Sorting
+  by position MUST group todos by status in the order "to do", "in progress", "done", and order
+  them top first within each status; direction does not apply to it.
 - **FR-015**: When sorting by due date, todos without a due date MUST come after all todos with a
   due date, in both ascending and descending order.
 - **FR-016**: Todos with equal sort values MUST be ordered by creation date, newest first, so the
@@ -227,18 +285,30 @@ and it no longer appears in any list.
 - **FR-023**: The API MUST serve a single user and MUST NOT require authentication in this
   version.
 
+**Ordering**
+
+- **FR-024**: Each todo MUST have a position within its status, counted from 0 at the top. Each
+  response that returns a todo MUST include its position.
+- **FR-025**: The client MUST be able to move a todo to a target status and a target position in
+  one request. The status and position MUST be saved together, so a todo is never saved with one
+  changed and not the other. A target position beyond the end MUST place the todo at the bottom.
+- **FR-026**: Moving, creating, deleting, or changing the status of one todo MUST NOT change the
+  relative order of any other todos.
+- **FR-027**: Positions within a status MUST stay without gaps or duplicates as seen by the
+  client: listing a status by position MUST return positions 0, 1, 2, and so on.
+
 ### Key Entities
 
 - **Todo**: One task the person wants to do. Attributes: identifier, title, description
-  (optional), due date (optional, date only), status (completed or not completed), creation
-  timestamp, update timestamp. There are no relationships to other entities in this version.
+  (optional), due date (optional, date only), status ("to do", "in progress", or "done"),
+  position within its status, creation timestamp, update timestamp. There are no relationships to other entities in this version.
 
 ## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
-- **SC-001**: A client developer can perform all six operations (create, list, get, update,
-  change status, delete) using only the documented request and response formats, with no
+- **SC-001**: A client developer can perform all seven operations (create, list, get, update,
+  change status, move, delete) using only the documented request and response formats, with no
   undocumented behavior needed.
 - **SC-002**: 100% of invalid requests in the acceptance scenarios and edge cases above are
   rejected with an error in the single consistent format, and none of them changes stored data.
@@ -264,3 +334,7 @@ and it no longer appears in any list.
 - Search by text, tags, priorities, subtasks, reminders, and recurring todos are out of scope for
   this version.
 - Data is stored persistently, so todos remain available across restarts.
+- The status model and positions are designed for the kanban board in feature 002; no data
+  conversion is needed because no todos exist before this feature ships.
+- Concurrent moves from several clients at once are not expected (single user); the last
+  successful move wins.
